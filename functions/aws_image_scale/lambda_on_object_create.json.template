@@ -1,0 +1,21 @@
+{
+        "LambdaFunctionConfigurations": [
+            {
+                "Id": "resize_and_blur_on_image_upload",
+                "LambdaFunctionArn": "${FUNCTION_ARN}",
+                "Events": [
+                    "s3:ObjectCreated:*"
+                ],
+                "Filter": {
+                    "Key": {
+                        "FilterRules": [
+                            {
+                                "Name": "prefix",
+                                "Value": "rawimg-"
+                            }
+                        ]
+                    }
+                }
+            }
+        ]
+}

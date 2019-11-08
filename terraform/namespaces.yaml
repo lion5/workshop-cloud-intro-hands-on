@@ -1,0 +1,65 @@
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: group01
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: group02
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: group03
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: group04
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: group05
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: group06
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: group07
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: group08
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+    name: group09
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+    name: group00
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+    name: demo
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+    name: production
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+    name: staging

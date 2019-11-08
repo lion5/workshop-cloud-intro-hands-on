@@ -1,0 +1,228 @@
+variables:
+  VERSION: "$CI_COMMIT_TAG"
+
+stages:
+  - build
+  - test
+  - apply_infrastructure
+  - docker_image
+  - staging
+  - smoke_test
+  - deploy
+
+build:
+  image: 'maven:3.6.1-jdk-8'
+  stage: build
+  script:
+    - mvn clean -Dmaven.test.skip=true package
+  artifacts:
+    paths:
+      - target/bookshelf-5-1.0-SNAPSHOT/
+
+unit_tests:
+  image: 'maven:3.6.1-jdk-8'
+  stage: test
+  script:
+    - mvn -Dtest=UnitTests test
+  dependencies: []
+
+integration_tests:
+  image: 'maven:3.6.1-jdk-8'
+  stage: test
+  script:
+    - mvn -Dtest=IntegrationTest test
+  dependencies: []
+
+terraform_apply:
+  image:
+    name: 'hashicorp/terraform:0.12.12'
+    entrypoint: ["/bin/sh", "-c"]
+  stage: apply_infrastructure
+  #only:
+  #  - tags
+  script:
+    - cd terraform/aws
+    - terraform init -backend=true -get=true -input=false
+    - terraform apply -input=false -auto-approve
+    - terraform output bookshelf_repository >> ../../repository
+    - terraform output iam_role_arn >> ../../iamrolearn
+    - terraform output bucket_prod_arn >> ../../bucketprodarn
+    - terraform output bucket_staging_arn >> ../../bucketstaginarn
+    # This seperates the host (-f1) from the port (-f2) host:port
+    - echo $(echo $(terraform output rds_endpoint) | cut -d':' -f1) >> ../../rdshost
+    - echo $(echo $(terraform output rds_endpoint) | cut -d':' -f2) >> ../../rdsport
+    - terraform output pillow_layer_arn >> ../../pillowlayerarn
+  dependencies: []
+  artifacts:
+    untracked: true
+      
+build_image:
+  stage: docker_image
+  image: 'docker:stable'
+  #only:
+  #  - tags
+  services:
+    - docker:dind
+  script:
+    #Build the docker image
+    - DOCKER_REPOSITORY=$(cat repository)
+    - docker build -t $DOCKER_REPOSITORY:$VERSION . --no-cache
+    #Install awscli in order to login to the ecr and push the image
+    - apk add --no-cache python3 make git
+    - python3 -m ensurepip
+    - rm -r /usr/lib/python*/ensurepip && \
+    - pip3 install --upgrade pip setuptools && \
+    - pip3 install awscli
+    #Login and push
+    - echo `aws ecr get-login --no-include-email --region "$AWS_REGION"` | sh
+    - docker push $DOCKER_REPOSITORY:$VERSION
+  dependencies:
+    - build
+    - terraform_apply
+
+staging_k8:
+  image: 'python:3.7-alpine'
+  stage: staging
+  #only:
+  #  - tags
+  environment:
+    name: staging
+  script:
+    # Install AWS CLI & Kubectl & aws-iam-authenticator
+    - pip3 install --upgrade pip setuptools && \
+    - pip3 install awscli
+    - apk add curl gettext
+    - curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl
+    - chmod +x ./kubectl
+    - mv ./kubectl /usr/local/bin/kubectl
+    - curl -o aws-iam-authenticator https://amazon-eks.s3-us-west-2.amazonaws.com/1.14.6/2019-08-22/bin/linux/amd64/aws-iam-authenticator
+    - chmod +x ./aws-iam-authenticator
+    - mv ./aws-iam-authenticator /usr/local/bin/aws-iam-authenticator
+    # Setup kubectl
+    - aws eks --region "$AWS_REGION" update-kubeconfig --name cloud-schulung-terraform
+    - kubectl apply -f terraform/aws/config-map-aws-auth_cloud-schulung-terraform.yaml || true
+    # Create Namespaces & config
+    - kubectl apply -f terraform/namespaces.yaml
+    - kubectl apply -f terraform/aws/access.yaml
+    # set the namespace of the staging environment
+    - kubectl config set-context $(kubectl config current-context) --namespace="$STAGING_NAMESPACE"
+    # Set environment variables
+    - VERSION="$VERSION" DOCKER_REPOSITORY=$(cat repository) SQL_HOST=$(cat rdshost) SQL_PORT=$(cat rdsport) BOOKSHELF_BUCKET="$BOOKSHELF_BUCKET_STAGING" BOOKSHELF_STORAGE_TYPE=${BOOKSHELF_STORAGE_TYPE} SQL_DB_NAME="$SQL_DB_STAGING" SQL_USER_NAME="$SQL_USER_NAME" SQL_PASSWORD="$SQL_PASSWORD" SQL_REGION="$AWS_REGION" AWS_REGION="$AWS_REGION" envsubst < CI_CD/k8s_deployment.yaml.template > k8s_deployment.yaml
+    - VERSION="$VERSION" VERSION_NO_DOTS="${VERSION//./}" envsubst < CI_CD/k8s_service.yaml.template > k8s_service.yaml
+    # Do the deployment
+    - kubectl apply -f k8s_deployment.yaml
+    - kubectl apply -f k8s_service.yaml
+    - kubectl rollout restart deployments/bookshelf-frontend-"$VERSION"
+    # Wait for IP and save it in file
+    - sleep ${WAIT_FOR_IP}
+    # Deploy container insights for logging purposes
+    - curl https://raw.githubusercontent.com/aws-samples/amazon-cloudwatch-container-insights/master/k8s-yaml-templates/quickstart/cwagent-fluentd-quickstart.yaml | sed "s/{{cluster_name}}/cloud-schulung-terraform/;s/{{region_name}}/"$AWS_REGION"/" | kubectl apply -f -
+    # Get Endpoint ip for subsequent smoke test against staging environment
+    - export ENDPOINT_IP=$(echo $(kubectl describe services --namespace staging -l version=${VERSION} | grep -o '^LoadBalancer Ingress:[^,]*' | sed 's/^LoadBalancer Ingress://'))
+    - echo export ENDPOINT_IP=${ENDPOINT_IP} >> endpointk8
+  dependencies:
+    - terraform_apply
+  artifacts:
+    paths:
+      - endpointk8
+      - CI_CD/k8s_deployment.yaml
+      - CI_CD/k8s_service.yaml
+
+smoke_test:
+  image: 'selenium/standalone-chrome'
+  stage: smoke_test
+  #only:
+  #  - tags
+  script:
+    - sudo apt-get update
+    - sudo apt-get install -y maven openjdk-8-jdk
+    - cat endpointk8
+    - source endpointk8
+    - mvn -Dtest=UserJourneyTestIT clean test
+  dependencies:
+    - staging_k8
+
+deploy_k8:
+  when: manual
+  image: 'python:3.7-alpine'
+  stage: deploy
+  #only:
+  #  - tags
+  environment:
+    name: production
+  script:
+    # Install AWS CLI & Kubectl & aws-iam-authenticator
+    - pip3 install --upgrade pip setuptools && \
+    - pip3 install awscli
+    - apk add curl gettext
+    - curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl
+    - chmod +x ./kubectl
+    - mv ./kubectl /usr/local/bin/kubectl
+    - curl -o aws-iam-authenticator https://amazon-eks.s3-us-west-2.amazonaws.com/1.14.6/2019-08-22/bin/linux/amd64/aws-iam-authenticator
+    - chmod +x ./aws-iam-authenticator
+    - mv ./aws-iam-authenticator /usr/local/bin/aws-iam-authenticator
+    # Setup kubectl
+    - aws eks --region "$AWS_REGION" update-kubeconfig --name cloud-schulung-terraform
+    - kubectl apply -f terraform/aws/config-map-aws-auth_cloud-schulung-terraform.yaml || true
+    # Create Namespaces
+    - kubectl apply -f terraform/namespaces.yaml
+    # set the namespace of the staging environment
+    - kubectl config set-context $(kubectl config current-context) --namespace="$NAMESPACE"
+    # Set environment variables
+    - VERSION="$VERSION" DOCKER_REPOSITORY=$(cat repository) SQL_HOST=$(cat rdshost) SQL_PORT=$(cat rdsport) BOOKSHELF_BUCKET="$BOOKSHELF_BUCKET_STAGING" BOOKSHELF_STORAGE_TYPE=${BOOKSHELF_STORAGE_TYPE} SQL_DB_NAME="$SQL_DB_STAGING" SQL_USER_NAME="$SQL_USER_NAME" SQL_PASSWORD="$SQL_PASSWORD" SQL_REGION="$AWS_REGION" AWS_REGION="$AWS_REGION" envsubst < CI_CD/k8s_deployment.yaml.template > k8s_deployment.yaml
+    - VERSION="$VERSION" VERSION_NO_DOTS="${VERSION//./}" envsubst < CI_CD/k8s_service.yaml.template > k8s_service.yaml
+    # Do the deployment
+    - kubectl apply -f k8s_deployment.yaml
+    - kubectl apply -f k8s_service.yaml
+    - kubectl rollout restart deployments/bookshelf-frontend-"$VERSION"
+  dependencies:
+    - terraform_apply
+
+deploy_cloud_function_staging:
+  image: 'python:3.7-alpine'
+  stage: staging
+  #only:
+  #  - tags
+  environment:
+    name: staging
+  script:
+    # Install AWS CLI
+    - pip3 install --upgrade pip setuptools && \
+    - pip3 install awscli
+    - apk add zip gettext
+    # Zip
+    - cd functions/aws_image_scale
+    - zip -r resize_and_blur.zip lambda_function.py
+    # Deploy Function
+    - aws lambda delete-function --function-name resize_and_blur_staging --region "$AWS_REGION" || true
+    - aws lambda create-function --function-name resize_and_blur_staging --zip-file fileb://resize_and_blur.zip --handler lambda_function.lambda_handler --runtime python3.7 --role $(cat ../../iamrolearn) --layers $(cat ../../pillowlayerarn) --region "$AWS_REGION"
+    - aws lambda add-permission --function-name resize_and_blur_staging --statement-id add_s3_bucket_policy_staging --action "lambda:InvokeFunction" --principal s3.amazonaws.com --source-arn "$(cat ../../bucketstaginarn)" --region "$AWS_REGION"
+    - export FUNCTION_ARN=$(aws lambda get-function --function-name resize_and_blur_staging --region "$AWS_REGION" | python3 -c "import sys, json; print(json.load(sys.stdin)['Configuration']['FunctionArn'])")
+    - envsubst < lambda_on_object_create.json.template > lambda_on_object_create.json
+    - aws s3api put-bucket-notification-configuration --bucket "$BOOKSHELF_BUCKET_STAGING" --notification-configuration file://lambda_on_object_create.json --region "$AWS_REGION"
+  dependencies:
+    - terraform_apply
+
+deploy_cloud_function_production:
+  image: 'python:3.7-alpine'
+  when: manual
+  stage: deploy
+  #only:
+  #  - tags
+  script:
+    # Install AWS CLI
+    - pip3 install --upgrade pip setuptools && \
+    - pip3 install awscli
+    - apk add zip gettext
+    # Zip
+    - cd functions/aws_image_scale
+    - zip -r resize_and_blur.zip lambda_function.py
+    # Deploy Function
+    - aws lambda delete-function --function-name resize_and_blur_production --region "$AWS_REGION" || true
+    - aws lambda create-function --function-name resize_and_blur_production --zip-file fileb://resize_and_blur.zip --handler lambda_function.lambda_handler --runtime python3.7 --role $(cat ../../iamrolearn) --layers $(cat ../../pillowlayerarn) --region "$AWS_REGION"
+    - aws lambda add-permission --function-name resize_and_blur_production --statement-id add_s3_bucket_policy_production --action "lambda:InvokeFunction" --principal s3.amazonaws.com --source-arn "$(cat ../../bucketprodarn)" --region "$AWS_REGION"
+    - export FUNCTION_ARN=$(aws lambda get-function --function-name resize_and_blur_production --region "$AWS_REGION" | python3 -c "import sys, json; print(json.load(sys.stdin)['Configuration']['FunctionArn'])")
+    - envsubst < lambda_on_object_create.json.template > lambda_on_object_create.json
+    - aws s3api put-bucket-notification-configuration --bucket "$BOOKSHELF_BUCKET_PRODUCTION" --notification-configuration file://lambda_on_object_create.json --region "$AWS_REGION"
+  dependencies:
+    - terraform_apply

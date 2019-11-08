@@ -1,0 +1,203 @@
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  namespace: group01
+  name: group01-full-right
+rules:
+- apiGroups: [""]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups:
+  - extensions
+  - apps
+  resources: ["*"]
+  verbs: ["*"]
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  namespace: group02
+  name: group02-full-right
+rules:
+- apiGroups: [""]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups:
+  - extensions
+  - apps
+  resources: ["*"]
+  verbs: ["*"]
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  namespace: group03
+  name: group03-full-right
+rules:
+- apiGroups: [""]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups:
+  - extensions
+  - apps
+  resources: ["*"]
+  verbs: ["*"]
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  namespace: group04
+  name: group04-full-right
+rules:
+- apiGroups: [""]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups:
+  - extensions
+  - apps
+  resources: ["*"]
+  verbs: ["*"]
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  namespace: group05
+  name: group05-full-right
+rules:
+- apiGroups: [""]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups:
+  - extensions
+  - apps
+  resources: ["*"]
+  verbs: ["*"]
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  namespace: group06
+  name: group06-full-right
+rules:
+- apiGroups: [""]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups:
+  - extensions
+  - apps
+  resources: ["*"]
+  verbs: ["*"]
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  namespace: group07
+  name: group07-full-right
+rules:
+- apiGroups: [""]
+  resources: ["*"]
+  verbs: ["*"]
+- apiGroups:
+  - extensions
+  - apps
+  resources: ["*"]
+  verbs: ["*"]
+---
+
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: group01-full-right-binding
+  namespace: group01
+subjects:
+- kind: User
+  name: cloudtraining01
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: group01-full-right
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: group02-full-right-binding
+  namespace: group02
+subjects:
+- kind: User
+  name: cloudtraining02
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: group02-full-right
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: group03-full-right-binding
+  namespace: group03
+subjects:
+- kind: User
+  name: cloudtraining03
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: group03-full-right
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: group04-full-right-binding
+  namespace: group04
+subjects:
+- kind: User
+  name: cloudtraining04
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: group04-full-right
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: group05-full-right-binding
+  namespace: group05
+subjects:
+- kind: User
+  name: cloudtraining05
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: group05-full-right
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: group06-full-right-binding
+  namespace: group06
+subjects:
+- kind: User
+  name: cloudtraining06
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: group06-full-right
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: group07-full-right-binding
+  namespace: group07
+subjects:
+- kind: User
+  name: cloudtraining07
+  apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: group07-full-right
+  apiGroup: rbac.authorization.k8s.io
