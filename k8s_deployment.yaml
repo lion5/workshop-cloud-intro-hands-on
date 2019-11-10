@@ -23,7 +23,7 @@ metadata:
     app: bookshelf
     version: latest
 
-# The bookshelf frontend replica set ensures that at least 3
+# The bookshelf frontend replica set ensures that at least 2
 # instances of the bookshelf app are running on the cluster.
 # For more info about Pods see:
 #   https://cloud.google.com/kubernetes-engine/docs/pods/
@@ -40,15 +40,16 @@ spec:
     spec:
       containers:
       - name: bookshelf-app
-        # Replace cloud-schulung with your project ID.
-        image: 153171767723.dkr.ecr.eu-west-1.amazonaws.com/bookshelf:latest
+        # Set the Docker image your deployment should run
+        image:
         env:
             - name: BOOKSHELF_BUCKET
               value: cloud-schulung-shared
             - name: BOOKSHELF_STORAGE_TYPE
               value: cloudsql
+              # Set the database name to your group's database
             - name: SQL_DB_NAME
-              value: staging
+              value:
             - name: SQL_USER_NAME
               value: root
             - name: SQL_PASSWORD
