@@ -57,7 +57,7 @@ spec:
             - name: SQL_REGION
               value: eu-west-1
             - name: SQL_HOST
-              value: cloud-schulung-mysql.ce3ov7rw7pfc.eu-west-1.rds.amazonaws.com
+              value: cloud-schulung-mysql.c06reguygdkb.eu-west-1.rds.amazonaws.com
             - name: SQL_PORT
               value: "3306"
             - name: AWS_REGION
